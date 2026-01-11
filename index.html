@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIGNAL INTERCEPT</title>
+    <style>
+        :root {
+            --n-red: #E50914;
+            --n-dark: #050505;
+            --n-grey: #1f1f1f;
+            --n-glow: rgba(229, 9, 20, 0.5);
+        }
+
+        body {
+            margin: 0;
+            background: var(--n-dark);
+            color: white;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        header {
+            padding: 15px;
+            border-bottom: 1px solid var(--n-red);
+            text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            flex-shrink: 0;
+        }
+
+        /* --- UPDATED RESPONSIVE TERMINAL AREA --- */
+        #intercept-box {
+            background: rgba(5, 5, 5, 0.95);
+            border: 1px solid #222;
+            margin: 10px auto;
+            width: 90%;
+            max-width: 600px;
+            /* Uses viewport height to stay proportional on mobile */
+            height: 25vh;
+            min-height: 140px;
+            padding: 15px;
+            position: relative;
+            overflow-y: auto;
+            box-shadow: inset 0 0 20px #000;
+            display: flex;
+            flex-direction: column;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        /* Scanline Overlay Effect */
+        #intercept-box::before {
+            content: " ";
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%),
+                linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+            background-size: 100% 4px, 3px 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #message-display {
+            font-family: 'Courier New', monospace;
+            font-size: 1.1rem;
+            color: #444;
+            text-transform: uppercase;
+            word-wrap: break-word;
+            line-height: 1.4;
+            letter-spacing: 1px;
+            transition: color 0.3s ease;
+            z-index: 5;
+        }
+
+        /* Responsive typography for smaller screens */
+        @media (max-width: 480px) {
+            #message-display {
+                font-size: 0.9rem;
+                line-height: 1.2;
+            }
+
+            #intercept-box {
+                height: 20vh;
+                margin: 5px auto;
+            }
+        }
+
+        #decrypt-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            background: var(--n-red);
+            width: 0%;
+            transition: width 0.1s;
+            box-shadow: 0 0 10px var(--n-red);
+            z-index: 11;
+        }
+
+        .locked #message-display {
+            color: var(--n-red);
+            text-shadow: 0 0 8px var(--n-red);
+        }
+
+        /* --- END OF UPDATED AREA --- */
+
+        canvas {
+            width: 100%;
+            flex-grow: 1;
+            /* Allows canvas to fill available space */
+            background: #000;
+            cursor: crosshair;
+        }
+
+        .controls {
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+            width: 100%;
+            background: var(--n-grey);
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            box-sizing: border-box;
+            flex-shrink: 0;
+        }
+
+        .slider-wrap {
+            margin-bottom: 25px;
+        }
+
+        input[type=range] {
+            width: 100%;
+            height: 15px;
+            accent-color: var(--n-red);
+            cursor: pointer;
+        }
+
+        label {
+            font-size: 10px;
+            letter-spacing: 2px;
+            color: #888;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        #status-glitch {
+            font-size: 12px;
+            color: var(--n-red);
+            text-align: center;
+            height: 20px;
+        }
+
+        /* Custom Scrollbar for Terminal */
+        #intercept-box::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        #intercept-box::-webkit-scrollbar-thumb {
+            background: #333;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <div id="status-glitch">INITIALIZING STALKER PROTOCOL...</div>
+    </header>
+
+    <div id="intercept-box">
+        <div id="message-display">NO SIGNAL DETECTED...</div>
+        <div id="decrypt-progress"></div>
+    </div>
+
+    <canvas id="scope"></canvas>
+
+    <div class="controls">
+        <div class="slider-wrap">
+            <label>FREQUENCY TUNER</label>
+            <input type="range" id="freq" min="1" max="100" step="0.1" value="10">
+        </div>
+        <div class="slider-wrap">
+            <label>AMPLITUDE MODULATOR</label>
+            <input type="range" id="amp" min="5" max="90" step="0.1" value="50">
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('scope');
+        const ctx = canvas.getContext('2d');
+        const msgDisp = document.getElementById('message-display');
+        const progress = document.getElementById('decrypt-progress');
+        const status = document.getElementById('status-glitch');
+
+        // State
+        let targetF = Math.random() * 80 + 10;
+        let targetA = Math.random() * 60 + 20;
+        let driftDir = 1;
+        let decryptPct = 0;
+        let offset = 0;
+
+        const secretMessage = "STALKER_CONFIRMED: TARGET_MOVING_TO_LOCATION_42.9_NORTH. TERMINATE_SIGNAL_IMMEDIATELY. AUTH_CODE: RED_OCTOBER_99.";
+        let revealedLength = 0;
+
+        function draw() {
+            // Keep canvas responsive to window resize
+            canvas.width = window.innerWidth;
+            canvas.height = canvas.offsetHeight;
+
+            // Dark Fade Effect (Motion Blur)
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Drift the target slowly to make it harder
+            targetF += 0.02 * driftDir;
+            if (targetF > 90 || targetF < 10) driftDir *= -1;
+
+            const curF = parseFloat(document.getElementById('freq').value);
+            const curA = parseFloat(document.getElementById('amp').value);
+
+            // Calculate Proximity
+            const distF = Math.abs(curF - targetF);
+            const distA = Math.abs(curA - targetA);
+            const isLocked = distF < 2 && distA < 5;
+
+            // Draw Target (Ghost)
+            drawWave(targetF, targetA, `rgba(255,255,255,${0.05 + (isLocked ? 0.1 : 0)})`, 1);
+
+            // Draw Noise/Interference
+            if (!isLocked) {
+                ctx.fillStyle = `rgba(255,0,0,${Math.random() * 0.1})`;
+                for (let i = 0; i < 10; i++) ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 2, 2);
+            }
+
+            // Draw Player Signal
+            const color = isLocked ? '#E50914' : '#550000';
+            drawWave(curF, curA, color, isLocked ? 3 : 1.5);
+
+            // Decryption Logic
+            if (isLocked) {
+                decryptPct += 0.3;
+                status.innerText = ">> SIGNAL LOCKED: DECRYPTING BITSTREAM...";
+                document.getElementById('intercept-box').classList.add('locked');
+                if (decryptPct > 100) decryptPct = 100;
+            } else {
+                decryptPct -= 0.1;
+                if (decryptPct < 0) decryptPct = 0;
+                status.innerText = ">> SEARCHING FOR CARRIER WAVE...";
+                document.getElementById('intercept-box').classList.remove('locked');
+            }
+
+            // Update UI
+            progress.style.width = decryptPct + "%";
+            revealedLength = Math.floor((decryptPct / 100) * secretMessage.length);
+            msgDisp.innerText = secretMessage.substring(0, revealedLength) +
+                (decryptPct < 100 ? "█".repeat(secretMessage.length - revealedLength) : "");
+
+            // Auto-scroll terminal to bottom as message appears
+            const container = document.getElementById('intercept-box');
+            container.scrollTop = container.scrollHeight;
+
+            offset -= 0.1;
+            requestAnimationFrame(draw);
+        }
+
+        function drawWave(f, a, color, width) {
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            if (color === '#E50914') {
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = color;
+            } else {
+                ctx.shadowBlur = 0;
+            }
+
+            const centerY = canvas.height / 2;
+
+            for (let x = 0; x < canvas.width; x += 2) {
+                const y = centerY + Math.sin(x * (f / 500) + offset) * a;
+                if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+
+        draw();
+    </script>
+</body>
+
+</html>
